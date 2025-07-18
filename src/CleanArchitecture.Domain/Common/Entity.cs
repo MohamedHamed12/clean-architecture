@@ -19,5 +19,10 @@ public abstract class Entity
         return copy;
     }
 
+    protected void AddDomainEvent(IDomainEvent domainEvent)
+    {
+        _domainEvents.Add(domainEvent);
+    }
+
     protected Entity() { }
 }

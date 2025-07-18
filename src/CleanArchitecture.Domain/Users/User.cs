@@ -59,7 +59,7 @@ public class User : Entity
 
         _reminderIds.Add(reminder.Id);
 
-        _domainEvents.Add(new ReminderSetEvent(reminder));
+        AddDomainEvent(new ReminderSetEvent(reminder));
 
         return Result.Success;
     }

@@ -2,9 +2,7 @@ using CleanArchitecture.Domain.Common;
 using CleanArchitecture.Domain.Reminders;
 using CleanArchitecture.Domain.Subscriptions;
 using CleanArchitecture.Domain.Users.Events;
-
 using ErrorOr;
-
 using Throw;
 
 namespace CleanArchitecture.Domain.Users;
@@ -12,32 +10,28 @@ namespace CleanArchitecture.Domain.Users;
 public class User : Entity
 {
     private readonly Calendar _calendar = null!;
-
     private readonly List<Guid> _reminderIds = [];
-
     private readonly List<Guid> _dismissedReminderIds = [];
 
-    public Subscription Subscription { get; private set; } = null!;
-
-    public string Email { get; } = null!;
-
-    public string FirstName { get; } = null!;
-
-    public string LastName { get; } = null!;
+    public Subscription Subscription { get; private set; } = Subscription.Canceled;
+    public string Email { get; private set; } = null!;
+    public string FirstName { get; private set; } = null!;
+    public string LastName { get; private set; } = null!;
+    private string _hashedPassword = null!;
 
     public User(
         Guid id,
         string firstName,
         string lastName,
         string email,
-        Subscription subscription,
+        Subscription? subscription = null,
         Calendar? calendar = null)
-            : base(id)
+        : base(id)
     {
         FirstName = firstName;
         LastName = lastName;
         Email = email;
-        Subscription = subscription;
+        Subscription = subscription ?? Subscription.Canceled;
         _calendar = calendar ?? Calendar.Empty();
     }
 
@@ -56,11 +50,9 @@ public class User : Entity
         }
 
         _calendar.IncrementEventCount(reminder.Date);
-
         _reminderIds.Add(reminder.Id);
 
         AddDomainEvent(new ReminderSetEvent(reminder));
-
         return Result.Success;
     }
 
@@ -82,22 +74,7 @@ public class User : Entity
         }
 
         _dismissedReminderIds.Add(reminderId);
-
-        _domainEvents.Add(new ReminderDismissedEvent(reminderId));
-
-        return Result.Success;
-    }
-
-    public ErrorOr<Success> CancelSubscription(Guid subscriptionId)
-    {
-        if (subscriptionId != Subscription.Id)
-        {
-            return Error.NotFound(description: "Subscription not found");
-        }
-
-        Subscription = Subscription.Canceled;
-
-        _domainEvents.Add(new SubscriptionCanceledEvent(this, subscriptionId));
+        AddDomainEvent(new ReminderDismissedEvent(reminderId));
 
         return Result.Success;
     }
@@ -115,30 +92,56 @@ public class User : Entity
         }
 
         _dismissedReminderIds.Remove(reminder.Id);
-
         _calendar.DecrementEventCount(reminder.Date);
 
-        _domainEvents.Add(new ReminderDeletedEvent(reminder.Id));
-
+        AddDomainEvent(new ReminderDeletedEvent(reminder.Id));
         return Result.Success;
     }
 
     public void DeleteAllReminders()
     {
-        _reminderIds.ForEach(reminderId => _domainEvents.Add(new ReminderDeletedEvent(reminderId)));
+        foreach (var reminderId in _reminderIds)
+        {
+            AddDomainEvent(new ReminderDeletedEvent(reminderId));
+        }
 
         _reminderIds.Clear();
+        _dismissedReminderIds.Clear();
+    }
+
+    public ErrorOr<Success> CancelSubscription(Guid subscriptionId)
+    {
+        if (Subscription.Id != subscriptionId)
+        {
+            return Error.NotFound(description: "Subscription not found");
+        }
+
+        Subscription = Subscription.Canceled;
+        AddDomainEvent(new SubscriptionCanceledEvent(this, subscriptionId));
+
+        return Result.Success;
+    }
+
+    public void SetPassword(string password)
+    {
+        // Hash logic placeholder — replace with proper hashing logic or a password service
+        _hashedPassword = HashPassword(password);
+    }
+
+    private static string HashPassword(string password)
+    {
+        // Simplified for demonstration — never use plain hashing like this in real projects!
+        return Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(password));
     }
 
     private bool HasReachedDailyReminderLimit(DateTimeOffset dateTime)
     {
-        var dailyReminderCount = _calendar.GetNumEventsOnDay(dateTime.Date);
+        var dailyCount = _calendar.GetNumEventsOnDay(dateTime.Date);
+        var limit = Subscription.SubscriptionType.GetMaxDailyReminders();
 
-        return dailyReminderCount >= Subscription.SubscriptionType.GetMaxDailyReminders()
-            || dailyReminderCount == int.MaxValue;
+        return dailyCount >= limit || dailyCount == int.MaxValue;
     }
 
-    private User()
-    {
-    }
+    // EF Core or ORM-friendly constructor
+    private User() { }
 }
